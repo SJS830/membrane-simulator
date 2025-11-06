@@ -1,12 +1,11 @@
 import * as THREE from 'three'
 import { OrbitControls } from './jsm/controls/OrbitControls.js'
-import Stats from './jsm/libs/stats.module.js'
-import { GUI } from './jsm/libs/lil-gui.module.min.js'
 
 const scene = new THREE.Scene()
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100)
-camera.position.z = 2
+camera.position.z = 4;
+camera.position.y = -4;
 
 const renderer = new THREE.WebGLRenderer({antialias: true})
 renderer.setSize(window.innerWidth, window.innerHeight)
@@ -61,10 +60,9 @@ function projectVectorToScreen(vector) {
 }
 
 let grid = [];
-let tmpgrid = [];
 
 const SIZE = 5;
-const N = 25;
+const N = 32;
 const MAXHEIGHT = 2;
 
 for (let i = 0; i < N; i++) {
@@ -137,11 +135,11 @@ const shaderMaterial = new THREE.ShaderMaterial({
     void main() {
         gl_FragColor = vec4(1.0, 0.573, 0.055, 1.0);
 
-        if (within_mod(vWorldPosition.x - X0 - DX / 2.0, DX, 0.005) || within_mod(vWorldPosition.y - X0 - DX / 2.0, DX, 0.005)) {
+        if (within_mod(vWorldPosition.x - X0, DX, 0.01) || within_mod(vWorldPosition.y - X0, DX, 0.01)) {
             gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Black grid lines
         }
 
-        if (within_mod(vWorldPosition.x - X0 - DX / 2.0, DX, 0.01) && within_mod(vWorldPosition.y - X0 - DX / 2.0, DX, 0.01)) {
+        if (within_mod(vWorldPosition.x - X0, DX, 0.015) && within_mod(vWorldPosition.y - X0, DX, 0.015)) {
             gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red points
         }
     }
@@ -154,13 +152,59 @@ const plane = new THREE.Mesh( geometry, shaderMaterial );
 plane.position.setX(-SIZE / 2).setY(-SIZE / 2);
 scene.add(plane);
 
-scene.add(new THREE.AxesHelper(5));
-
+//scene.add(new THREE.AxesHelper(5));
 
 let isDragging = false;
 let draggingIndex = 0;
 
+let fixedIndices = [];
+
+document.addEventListener("mousedown", (event) => {
+    //console.log(event.button);
+
+    if (event.button == 0) return;
+
+    //event.preventDefault();
+
+    const mouse = new THREE.Vector2();
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    let minIndex = fixedIndices[0];
+    let minDist = Infinity;
+
+    for (let index of fixedIndices) {
+        const x = grid[index];
+        const y = grid[index + 1];
+        const z = grid[index + 2];
+
+        let dist = mouse.distanceToSquared(projectVectorToScreen(new THREE.Vector3(x, y, z).add(plane.position)));
+        
+        if (dist < minDist) {
+            minIndex = index;
+            minDist = dist;
+        }
+    }
+
+    //console.log(event.button);
+          
+    //console.log(fixedIndices);
+    if ((minDist ** .5) < 0.1) {
+        /*console.log(`Clicked on vertex (${minI}, ${minJ}) at distance ${minDist}`);
+        grid[3 * (minI * N + minJ) + 2] += (event.button == 0 ? 0.2 : -0.2); // change z coordinate
+        const newGeometry = heightDataToBufferGeometry(grid);
+        plane.geometry.dispose();
+        plane.geometry = newGeometry;*/
+        //isDragging = true;
+
+        fixedIndices = fixedIndices.filter(index => index != minIndex);
+    }
+    console.log(fixedIndices);
+});
+
 document.addEventListener('mousedown', (event) => {
+    if (event.button != 0) return;
+
     const mouse = new THREE.Vector2();
     mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
     mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
@@ -186,7 +230,7 @@ document.addEventListener('mousedown', (event) => {
         }
     }
 
-    console.log(event.button);
+    //console.log(event.button);
                 
     if ((minDist ** .5) < 0.02) {
         /*console.log(`Clicked on vertex (${minI}, ${minJ}) at distance ${minDist}`);
@@ -196,6 +240,8 @@ document.addEventListener('mousedown', (event) => {
         plane.geometry = newGeometry;*/
         isDragging = true;
         draggingIndex = 3 * (minI * N + minJ);
+
+        fixedIndices.push(draggingIndex);
         
         controls.enabled = false;
     }
@@ -221,8 +267,8 @@ document.addEventListener('mousemove', (event) => {
         let minDist = Infinity;
 
         const mouse = new THREE.Vector2();
-        mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-        mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         for (let height = -MAXHEIGHT; height <= MAXHEIGHT; height += 0.05) {
             const x = grid[draggingIndex];
@@ -243,6 +289,9 @@ document.addEventListener('mousemove', (event) => {
     }
 });
 
+let tmpgrid = grid.slice();
+//let twoTimesAgo = grid.slice();
+
 function animate() {
     requestAnimationFrame(animate)
     /*cube.rotation.x += 0.01
@@ -253,36 +302,55 @@ function animate() {
 
     controls.update();
 
-    tmpgrid = grid.slice();
+    //let t0 = performance.now();
 
-    for (let i = 1; i < N - 1; i++) {
-        for (let j = 1; j < N - 1; j++) {
-            let index = 3 * vertexIndex(i, j);
+    //for (let r = 0; r < 1; r++) {
+        tmpgrid = grid.slice();
 
-            if (isDragging && index == draggingIndex) continue;
+        for (let i = 1; i < N - 1; i++) {
+            for (let j = 1; j < N - 1; j++) {
+                let index = 3 * vertexIndex(i, j);
 
-            let heightindices = [
-                3 * vertexIndex(i - 1, j) + 2,
-                3 * vertexIndex(i + 1, j) + 2,
-                
-                3 * vertexIndex(i, j - 1) + 2,
-                3 * vertexIndex(i, j + 1) + 2,
-            ];
+                if (fixedIndices.includes(index) || (isDragging && index == draggingIndex)) continue;
 
-            let sum = 0;
-            for (let hi of heightindices) {
-                sum += grid[hi];
+                let heightindices = [
+                    3 * vertexIndex(i - 1, j) + 2,
+                    3 * vertexIndex(i + 1, j) + 2,
+                    
+                    3 * vertexIndex(i, j - 1) + 2,
+                    3 * vertexIndex(i, j + 1) + 2,
+                ];
+
+                let sum = 0;
+                for (let hi of heightindices) {
+                    sum += grid[hi];
+                }
+
+                tmpgrid[index + 2] = sum / 4;
+
+                /*let laplacian = (sum - 4 * grid[index]) / (SIZE / N) ** 2;
+
+                const CT = 0.01;
+
+                tmpgrid[index] = 2 * grid[index] - twoTimesAgo[index] + laplacian * CT ** 2;*/
             }
-
-            tmpgrid[index + 2] = sum / 4;
         }
-    }
 
-    grid = tmpgrid.slice();
+        //twoTimesAgo = grid.slice();
+        grid = tmpgrid.slice();
+    //}
+
+    //let t1 = performance.now();
 
     updatePlaneGeometry();
 
     render();
+
+    //console.log(fixedIndices);
+
+    //let t2 = performance.now();
+
+    //console.log(`Simulation time: ${t1 - t0} ms, Rendering time: ${t2 - t1} ms`);
 }
 
 function render() {
